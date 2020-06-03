@@ -5,36 +5,45 @@
 #include <algorithm>
 #include <random>
 
-GameEngine::GameEngine(Menu *menu, int seedIn) : players(),
-                                                 factories(),
-                                                 centerPile(),
-                                                 bag(new TileList()),
-                                                 lid(new TileList()),
-                                                 menu(menu)
+GameEngine::GameEngine(Menu *menu, int seedIn, int numPlayers, int numCenters) : seed(seedIn),
+                                                                                 numPlayers(numPlayers),
+                                                                                 numCenters(numCenters),
+                                                                                 factories(),
+                                                                                 centerPiles(),
+                                                                                 bag(new TileList()),
+                                                                                 lid(new TileList()),
+                                                                                 menu(menu)
 {
+
+    numFactories = numPlayers * 2 + 1;
     //Create factories
-    for (int i = 0; i < NUM_FACTORIES; ++i)
+    for (int i = 0; i < (numFactories); ++i)
     {
         factories[i] = new Factory();
     }
-    seed = seedIn;
+    for (int i = 0; i < numCenters; i++)
+    {
+        std::vector<TileType> centerPile;
+        centerPiles.push_back(centerPile);
+    }
+
     turnNum = 0;
+    replay = false;
+    players = new PlayerTree();
 }
 
 GameEngine::~GameEngine()
 {
-    for (int i = 0; i < NUM_FACTORIES; ++i)
+    for (int i = 0; i < numFactories; ++i)
     {
-        if (factories[i] != nullptr)
+        if (&factories[i] != nullptr)
             delete factories[i];
     }
     if (bag != nullptr)
         delete bag;
     if (lid != nullptr)
         delete lid;
-    for (Player *player : players)
-        if (player != nullptr)
-            delete player;
+    delete players;
 }
 
 void GameEngine::logTurn(std::string turn)
@@ -42,54 +51,51 @@ void GameEngine::logTurn(std::string turn)
     log.push_back(turn);
 }
 
+void GameEngine::toggleReplay()
+{
+    replay = !replay;
+}
+
 std::vector<std::string> GameEngine::getLog()
 {
     return log;
 }
 
-bool GameEngine::playGame()
+bool GameEngine::playGameFill()
 {
     addPlayers();
     fillBag();
-    playerTurnID = players[0];
-    return playGame(false);
+    playerTurnID = players->getPlayerWithTurn();
+    return playGame();
 }
 
-bool GameEngine::playGame(bool replay)
+bool GameEngine::playGame()
 {
     //Bool to track exit condition
     bool exit = false;
 
     while (!exit && !hasPlayerWon())
     {
-        if (turnNum >= (int)log.size())
+        if (replay && turnNum >= (int)log.size())
         {
             replay = false;
         }
-        exit = playRound(replay);
+        exit = playRound();
     }
     //Check if a player has won after each round
     if (hasPlayerWon())
     {
+        Player *winner = players->winningPlayer();
         //Game is a draw
-        if (players[0]->getScore() == players[1]->getScore())
+        if (winner == nullptr)
         {
             //Print results
-            menu->gameOver(players[0]->getName(), players[1]->getName(), players[0]->getScore());
+            menu->gameOver();
         }
-        //Set pointer to winning player
         else
         {
-            Player *winningPlayer = playerTurnID;
-            for (auto player : players)
-            {
-                if (player->getScore() > winningPlayer->getScore())
-                {
-                    winningPlayer = player;
-                }
-            }
             //Print results
-            menu->gameOver(winningPlayer);
+            menu->gameOver(winner);
         }
         menu->printMessage("Do you want to save this game? (y/n)");
         std::stringstream ss(menu->getInput());
@@ -110,14 +116,18 @@ bool GameEngine::playGame(bool replay)
     return exit;
 }
 
-bool GameEngine::playRound(bool replay)
+bool GameEngine::playRound()
 {
     //Track whether all tiles have been drawn
     if (roundOver())
     {
         //Return FP tile to center
-        centerPile.push_back(FIRSTPLAYER);
-        for (int i = 0; i < NUM_FACTORIES; i++)
+        for (int i = 0; i < numCenters; i++)
+        {
+            centerPiles[i].push_back(FIRSTPLAYER);
+        }
+
+        for (int i = 0; i < (numFactories); i++)
         {
             TileType temp[4] = {NOTILE, NOTILE, NOTILE, NOTILE};
 
@@ -147,12 +157,10 @@ bool GameEngine::playRound(bool replay)
     {
         //Print player turn GUI
         menu->handStart(playerTurnID->getName());
-        menu->printFactory(&centerPile);
-        for (int i = 0; i < NUM_FACTORIES; i++)
-        {
-            menu->printFactory(i + 1, factories[i]->getTiles());
-        }
-        menu->printMosaic(playerTurnID);
+        menu->printFactory(centerPiles);
+        menu->printFactory(factories);
+
+        menu->printMosaic(players);
 
         //Bool to check whether input command has been executed
         bool inputDone = false;
@@ -164,7 +172,7 @@ bool GameEngine::playRound(bool replay)
             {
                 handleReplay(&inputDone, &exit);
                 turnNum++;
-            } while (!exit && !inputDone);
+            } while (!exit && !inputDone && replay);
         }
         else
         {
@@ -179,20 +187,7 @@ bool GameEngine::playRound(bool replay)
     {
         //Distribute tiles to walls
         menu->printMessage("=== END OF ROUND ===");
-
-        for (auto player : players)
-        {
-            if (player->hasFirstPlayer())
-            {
-                playerTurnID = player;
-            }
-
-            for (TileType tile : player->calcScore())
-            {
-                lid->addBack(tile);
-            }
-            menu->printScore(player->getName(), player->getScore());
-        }
+        playerTurnID = players->endRound(lid, menu);
     }
     return exit;
 }
@@ -229,11 +224,6 @@ void GameEngine::handleInput(bool *inputDone, bool *exit)
 
         if (!*inputDone)
             menu->printMessage("Invalid input: " + errorMessage + ", try again");
-
-        if (inputDone)
-        {
-            logTurn(ss.str());
-        }
     }
     else
     {
@@ -261,6 +251,7 @@ void GameEngine::handleReplay(bool *inputDone, bool *exit)
         }
         else if (next == "resume" || next == "r")
         {
+            replay = false;
         }
         if (!inputDone)
         {
@@ -299,26 +290,48 @@ bool GameEngine::saveCommand(bool *inputDone, std::stringstream *ss)
 std::string GameEngine::convertCommand(bool *inputDone, std::stringstream *ss)
 {
     std::string errorMessage = "none";
-    unsigned int factoryNum = NUM_FACTORIES + 1, lineNum = NUMBER_OF_LINES + 1;
+    std::string facNum = "";
+    int lineNum = NUMBER_OF_LINES + 1, factoryNum = 0;
     char colour = '\0';
 
-    *ss >> factoryNum >> colour >> lineNum;
+    *ss >> facNum >> colour >> lineNum;
+    if (facNum.at(0) == 'C')
+    {
+        int num = facNum.at(1);
+        factoryNum = (num - 48) - (2 * (num - 48));
+    }
+    else
+    {
+        factoryNum = facNum.at(0) - 48;
+    }
     TileType tileType = charToTileType(colour);
     --lineNum;
 
     errorMessage = turnCommand(inputDone, factoryNum, lineNum, tileType);
+    if (errorMessage == "none")
+    {
+        logTurn(ss->str());
+    }
     return errorMessage;
 }
 
 std::string GameEngine::convertCommand(bool *inputDone, std::string str)
 {
     std::string errorMessage = "none";
-    unsigned int factoryNum = NUM_FACTORIES + 1, lineNum = NUMBER_OF_LINES + 1;
+    int factoryNum = (numPlayers * 2 + 1) + 1, lineNum = NUMBER_OF_LINES + 1;
     char colour = '\0';
-
-    factoryNum = str.at(5) - 48;
-    colour = str.at(7);
-    lineNum = str.at(9) - 48;
+    if (str.at(5) == 'C')
+    {
+        factoryNum = (str.at(6)-48) - (2 * (str.at(6)-48));
+        colour = str.at(8);
+        lineNum = str.at(10) - 48;
+    }
+    else
+    {
+        factoryNum = str.at(5) - 48;
+        colour = str.at(7);
+        lineNum = str.at(9) - 48;
+    }
     TileType tileType = charToTileType(colour);
     --lineNum;
 
@@ -337,9 +350,9 @@ std::string GameEngine::turnCommand(bool *inputDone, int factoryNum, int lineNum
             if (validLineNum(lineNum))
             {
                 //If drawing from center pile
-                if (factoryNum == 0)
+                if (factoryNum < 0)
                 {
-                    errorMessage = centerCommand(inputDone, colour, lineNum);
+                    errorMessage = centerCommand(factoryNum, inputDone, colour, lineNum);
                 }
                 //If drawing from factory
                 else
@@ -351,7 +364,7 @@ std::string GameEngine::turnCommand(bool *inputDone, int factoryNum, int lineNum
                 if (*inputDone)
                 {
                     //Change player turn
-                    changePlayerTurn();
+                    playerTurnID = players->switchPlayerTurn();
                     menu->printMessage("Turn successful.");
                 }
             }
@@ -366,15 +379,29 @@ std::string GameEngine::turnCommand(bool *inputDone, int factoryNum, int lineNum
     return errorMessage;
 }
 
-std::string GameEngine::centerCommand(bool *inputDone, TileType tileType, int lineNum)
+std::string GameEngine::centerCommand(int factoryNum, bool *inputDone, TileType tileType, int lineNum)
 {
     std::string errorMessage = "none";
-    if (!centerPile.empty() && centerPileContains(tileType))
+    int pileNum = 0;
+    if (factoryNum == -1)
+    {
+        pileNum = 0;
+    }
+    else
+    {
+        pileNum = 1;
+    }
+
+    if (!centerPiles[pileNum].empty() && centerPileContains(pileNum, tileType))
     {
         //If moving tiles straight to broken line
         if (lineNum == 5)
         {
-            playerTurnID->getMosaic()->addToBrokenTiles(drawFromCenter(tileType), tileType);
+            if (containsFirstPlayer())
+            {
+                playerTurnID->getMosaic()->getBrokenTiles()->addFront(FIRSTPLAYER);
+            }
+            playerTurnID->getMosaic()->addToBrokenTiles(drawFromCenter(pileNum, tileType), tileType);
             *inputDone = true;
         }
         //If moving tiles to pattern line
@@ -385,7 +412,7 @@ std::string GameEngine::centerCommand(bool *inputDone, TileType tileType, int li
             {
                 playerTurnID->getMosaic()->getBrokenTiles()->addFront(FIRSTPLAYER);
             }
-            playerTurnID->getMosaic()->insertTilesIntoLine(lineNum, drawFromCenter(tileType), tileType);
+            playerTurnID->getMosaic()->insertTilesIntoLine(lineNum, drawFromCenter(pileNum, tileType), tileType);
             *inputDone = true;
         }
         else
@@ -409,9 +436,31 @@ std::string GameEngine::factoryCommand(bool *inputDone, int factoryNum, int line
             if (lineNum == 5)
             {
                 playerTurnID->getMosaic()->addToBrokenTiles(factories[factoryNum]->draw(tileType), tileType);
+                int pile = 0;
+                if (centerPiles.size() > 1)
+                {
+                    bool valid = false;
+                    while (!valid)
+                    {
+                        menu->printMessage("Which center pile should tiles be added to?");
+                        std::stringstream ss(menu->getInput());
+                        std::string pile;
+                        ss >> pile;
+                        if (pile == "C1")
+                        {
+                            valid = true;
+                        }
+
+                        if (pile == "C2")
+                        {
+                            pile = 1;
+                            valid = true;
+                        }
+                    }
+                }
                 for (TileType tile : factories[factoryNum]->empty())
                 {
-                    centerPile.push_back(tile);
+                    centerPiles[pile].push_back(tile);
                 }
                 *inputDone = true;
             }
@@ -420,10 +469,31 @@ std::string GameEngine::factoryCommand(bool *inputDone, int factoryNum, int line
                      playerTurnID->getMosaic()->getLine(lineNum)->canAddTiles(tileType))
             {
                 playerTurnID->getMosaic()->insertTilesIntoLine(lineNum, factories[factoryNum]->draw(tileType), tileType);
+                int pileNum = 0;
+                if (centerPiles.size() > 1)
+                {
+                    bool valid = false;
+                    while (!valid)
+                    {
+                        menu->printMessage("Which center pile should tiles be added to?");
+                        std::stringstream ss(menu->getInput());
+                        std::string pile;
+                        ss >> pile;
+                        if (pile == "C1")
+                        {
+                            valid = true;
+                        }
 
+                        if (pile == "C2")
+                        {
+                            pileNum = 1;
+                            valid = true;
+                        }
+                    }
+                }
                 for (TileType tile : factories[factoryNum]->empty())
                 {
-                    centerPile.push_back(tile);
+                    centerPiles[pileNum].push_back(tile);
                 }
 
                 *inputDone = true;
@@ -446,13 +516,29 @@ bool GameEngine::validLineNum(int lineNum)
 
 bool GameEngine::validFactoryNum(int factoryNum)
 {
-    return factoryNum >= 0 && factoryNum <= NUM_FACTORIES;
+    return factoryNum >= -2 && factoryNum <= numFactories;
 }
 
 bool GameEngine::roundOver()
 {
     // centerPile.empty() && factoriesAreEmpty(); equivalent but less efficient
-    return !(!centerPile.empty() || !factoriesAreEmpty());
+    bool empty = false;
+    if (!centerPiles[0].empty())
+    {
+        empty = false;
+    }
+    else
+    {
+        if (numCenters > 1 && !centerPiles[1].empty())
+        {
+            empty = false;
+        }
+        else
+        {
+            empty = true;
+        }
+    }
+    return empty;
 }
 
 // returns true if factories are empty
@@ -460,28 +546,11 @@ bool GameEngine::factoriesAreEmpty()
 {
     bool factoriesEmpty = true;
     int factoryIndex = 0;
-    while (factoriesEmpty && factoryIndex < NUM_FACTORIES)
+    while (factoriesEmpty && factoryIndex < (numPlayers * 2 + 1))
     {
         factoriesEmpty &= factories[factoryIndex++]->isEmpty();
     }
     return factoriesEmpty;
-}
-
-void GameEngine::setPlayerTurn(int playerIndex)
-{
-    playerTurnID = players[playerIndex];
-}
-
-void GameEngine::changePlayerTurn()
-{
-    if (players[0] == playerTurnID)
-    {
-        playerTurnID = players[1];
-    }
-    else
-    {
-        playerTurnID = players[0];
-    }
 }
 
 Factory *GameEngine::getFactory(int position)
@@ -511,16 +580,16 @@ void GameEngine::fillBag()
     }
 }
 
-int GameEngine::drawFromCenter(TileType colour)
+int GameEngine::drawFromCenter(int pileNum, TileType colour)
 {
     int count = 0;
     std::vector<int> remove;
     int decrement = 0;
 
     //Loop through vector saving indexes of tiles to be erased
-    for (int i = 0; i < (int)centerPile.size(); i++)
+    for (int i = 0; i < (int)centerPiles[pileNum].size(); i++)
     {
-        if (centerPile[i] == colour)
+        if (centerPiles[pileNum][i] == colour)
         {
             count++;
             remove.push_back(i);
@@ -530,20 +599,28 @@ int GameEngine::drawFromCenter(TileType colour)
     for (int i = 0; i < (int)remove.size(); i++)
     {
         // erase element at index
-        centerPile.erase(centerPile.begin() + (remove[i] - decrement));
+        centerPiles[pileNum].erase(centerPiles[pileNum].begin() + (remove[i] - decrement));
         // Reduce all future indexes by 1
         decrement++;
     }
     return count;
 }
 
+void GameEngine::setPlayerTurn(int playerIndex)
+{
+    playerTurnID = players->setPlayerTurn(playerIndex);
+}
+
 bool GameEngine::containsFirstPlayer()
 {
     bool contains = false;
-    if (centerPile[0] == FIRSTPLAYER)
+    if (centerPiles[0][0] == FIRSTPLAYER)
     {
-        centerPile.erase(centerPile.begin());
-        contains = true;
+        for (int i = 0; i < numCenters; i++)
+        {
+            centerPiles[i].erase(centerPiles[i].begin());
+            contains = true;
+        }
     }
     return contains;
 }
@@ -562,67 +639,53 @@ void GameEngine::fillLid(TileList *lid)
     this->lid = lid;
 }
 
-void GameEngine::fillCenterPile(std::vector<TileType> centerPile)
+void GameEngine::fillCenterPile(int pileNum, std::vector<TileType> centerPile)
 {
-    this->centerPile = centerPile;
+    centerPiles[pileNum] = centerPile;
 }
 
 void GameEngine::fillFactories(Factory *factories[])
 {
-    for (int i = 0; i < NUM_FACTORIES; ++i)
+    for (int i = 0; i < (numPlayers * 2 + 1); ++i)
     {
-        if (this->factories[i] != nullptr)
-            delete this->factories[i];
         this->factories[i] = factories[i];
     }
 }
 
-Player *GameEngine::addPlayer(string name)
+void GameEngine::addPlayer(string name)
 {
     //creates a new player
-    return addPlayer(name, 0, new Mosaic());
+    addPlayer(name, 0, new Mosaic());
 }
 
-Player *GameEngine::addPlayer(std::string name, int score, Mosaic *mosaic)
+void GameEngine::addPlayer(std::string name, int score, Mosaic *mosaic)
 {
-    players.push_back(new Player(name, score, mosaic));
-    return players.back();
+    players->addPlayer(new Player(name, score, mosaic));
 }
 
 void GameEngine::addPlayers()
 {
-    //Checks for player names and adds them to player vector
-    bool hasValidName = true;
-    string name1;
-    do
+    for (int i = 0; i < numPlayers; i++)
     {
-        menu->printMessage("Enter the name for player 1:");
-        name1 = menu->getInput();
-        hasValidName = isNotWhiteSpace(name1);
-        if (!hasValidName)
-            menu->printMessage("Error - Invalid Name");
-    } while (!hasValidName);
-
-    hasValidName = true;
-    string name2;
-    do
-    {
-        menu->printMessage("Enter the name for player 2:");
-        name2 = menu->getInput();
-        hasValidName = isNotWhiteSpace(name2);
-        if (!hasValidName)
-            menu->printMessage("Error - Invalid Name");
-    } while (!hasValidName);
-
-    addPlayer(name1);
-    addPlayer(name2);
-
+        bool hasValidName = true;
+        string name;
+        do
+        {
+            //Checks for player names and adds them to player tree
+            menu->printMessage("Enter the name for player " + std::to_string(i) + ":");
+            name = menu->getInput();
+            hasValidName = isNotWhiteSpace(name);
+            if (!hasValidName)
+                menu->printMessage("Error - Invalid Name");
+        } while (!hasValidName);
+        addPlayer(name);
+    }
     menu->printMessage("Let's Play!");
 }
 
-std::vector<TileType> GameEngine::getCenterPile()
+std::vector<std::vector<TileType>> GameEngine::getCenterPile()
 {
-    return centerPile;
+    return centerPiles;
 }
 
 TileList *GameEngine::getBag()
@@ -640,27 +703,32 @@ Player *GameEngine::getPlayerTurnID()
     return playerTurnID;
 }
 
-Player *GameEngine::getPlayer(int playerIndex)
+Player *GameEngine::getPlayer(int index)
 {
-    return players.at(playerIndex);
+    return players->findPlayer(index);
+}
+
+int GameEngine::getNumPlayers()
+{
+    return numPlayers;
 }
 
 bool GameEngine::hasPlayerWon()
 {
     bool playerWon = false;
-    unsigned int playerIndex = 0;
-    while (!playerWon && playerIndex < players.size())
-        playerWon = players.at(playerIndex++)->hasWon();
+    int playerIndex = 1;
+    while (!playerWon && playerIndex < players->getNumPlayers())
+        playerWon = players->findPlayer(playerIndex++)->hasWon();
     return playerWon;
 }
 
-bool GameEngine::centerPileContains(TileType tileType)
+bool GameEngine::centerPileContains(int pileNum, TileType tileType)
 {
     bool centerPileContainsTile = false;
     unsigned int index = 0;
-    while (!centerPileContainsTile && index < centerPile.size())
+    while (!centerPileContainsTile && index < centerPiles[pileNum].size())
     {
-        centerPileContainsTile = centerPile[index] == tileType;
+        centerPileContainsTile = centerPiles[pileNum][index] == tileType;
         index++;
     }
     return centerPileContainsTile;
@@ -669,4 +737,9 @@ bool GameEngine::centerPileContains(TileType tileType)
 int GameEngine::getSeed()
 {
     return seed;
+}
+
+PlayerTree *GameEngine::getPlayers()
+{
+    return players;
 }

@@ -24,9 +24,50 @@ int main(int argc, char const *argv[])
                 std::istringstream iss(argv[1]);
                 iss >> seed;
             }
-            engine = new GameEngine(&menu, seed);
+            bool inputValid = false;
+            int numPlayers = 0;
+            do
+            {
+                menu.printMessage("How many players? (2, 3 or 4");
+                try
+                {
+                    numPlayers = stoi(menu.getInput());
+                }
+                catch (...)
+                {
+                    menu.printMessage("Invalid number, try again");
+                }
+                if (numPlayers >= 2 && numPlayers <= 4)
+                {
+                    inputValid = true;
+                }
+                else
+                    menu.printMessage("Invalid number, try again");
+            } while (!inputValid);
+            int numCenters = 0;
+            inputValid = false;
+            do
+            {
+                menu.printMessage("How many center factories? (1 or 2");
+                try
+                {
+                    numCenters = stoi(menu.getInput());
+                }
+                catch (...)
+                {
+                    menu.printMessage("Invalid number, try again");
+                }
+                if (numCenters >= 1 && numCenters <= 2)
+                {
+                    inputValid = true;
+                }
+                else
+                    menu.printMessage("Invalid number, try again");
+            } while (!inputValid);
 
-            exit = engine->playGame();
+            engine = new GameEngine(&menu, seed, numPlayers, numCenters);
+
+            exit = engine->playGameFill();
         }
         else if (input == "2")
         {
@@ -39,8 +80,15 @@ int main(int argc, char const *argv[])
                     engine = saver.load(fileName, &menu);
                     if (engine != nullptr)
                     {
-                        menu.printMessage("Azul game successfully loaded");
-                        exit = engine->playGame(false);
+                        if (engine->hasPlayerWon())
+                        {
+                            throw "Game in save file is complete, use the replay function to review/resume completed games";
+                        }
+                        else
+                        {
+                            menu.printMessage("Azul game successfully loaded");
+                            exit = engine->playGame();
+                        }
                     }
                 }
                 catch (const char *errorMessage)
@@ -64,7 +112,8 @@ int main(int argc, char const *argv[])
                     if (engine != nullptr)
                     {
                         menu.printMessage("Azul game successfully loaded");
-                        exit = engine->playGame(true);
+                        engine->toggleReplay();
+                        exit = engine->playGame();
                     }
                 }
                 catch (const char *errorMessage)

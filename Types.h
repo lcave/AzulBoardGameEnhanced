@@ -9,7 +9,7 @@
 #define FACTORY_SIZE 4
 #define NUM_FACTORIES 5
 
-#define SAVE_FILE_LINES_LENGTH 28
+#define SAVE_FILE_LINES_LENGTH 53
 
 enum TileType
 {

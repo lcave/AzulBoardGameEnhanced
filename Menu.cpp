@@ -50,75 +50,174 @@ void Menu::printMessage(std::string message)
 void Menu::handStart(string playername)
 {
     std::cout << "TURN FOR PLAYER: " << PARAMETER << playername << RESET << std::endl;
-    std::cout << COMMAND << "Factories: \n" << RESET;
+    std::cout << COMMAND << "Factories: \n"
+              << RESET;
 }
 
-void Menu::printFactory(int id, TileType* contents)
+void Menu::printFactory(Factory **factories)
 {
-    std::cout << id << ": ";
-    for (int i = 0; i < FACTORY_SIZE; i++)
+    for (int i = 0; i < NUM_FACTORIES; i++)
     {
-        std::cout << getOutputColour(contents[i]) << (char)contents[i] << RESET << " ";
+        std::string str;
+        str.append(factoryHelper(factories[i], i));
+        if (factories[5 + i] != nullptr && 5 + i < 9)
+        {
+            str.append("    ");
+            str.append(factoryHelper(factories[5 + i], 5 + i));
+        }
+        std::cout << str << std::endl;
     }
-    std::cout << std::endl;
-    std::cout << (id == 5 ? "\n" : "");
 }
 
-void Menu::printFactory(std::vector<TileType> *centerPile)
+std::string Menu::factoryHelper(Factory *factory, int i)
 {
-    std::cout << "0: ";
-    for (TileType tile : *centerPile)
+    std::string str = std::to_string(i + 1);
+    str.append(": ");
+    for (int j = 0; j < FACTORY_SIZE; j++)
     {
-        std::cout << getOutputColour(tile) << (char)tile << RESET << " ";
+        str.append(getOutputColour(factory->getTiles()[j]));
+        str.push_back(factory->getTiles()[j]);
+        str.append(RESET);
+        str.append(" ");
     }
-    std::cout << std::endl;
+    return str;
 }
 
-void Menu::printMosaic(Player *player)
+void Menu::printFactory(std::vector<std::vector<TileType>> centerPiles)
 {
-    std::cout << COMMAND << "Mosaic for " << PARAMETER << player->getName() << RESET << std::endl;
-    for (int j = 0; j < NUMBER_OF_LINES; j++)
+    int count = 1;
+    for(auto pile : centerPiles)
     {
-        std::cout << j + 1 << ": ";
-        std::string output;
-        int lineSize = player->getMosaic()->getLine(j)->getMaxSize();
-        int numTiles = player->getMosaic()->getLine(j)->getNumTiles();
-
-        for (int i = 0; i < 5 - lineSize; i++)
+        std::cout << "C" << count << ": ";
+        for (TileType tile : pile)
         {
-            std::cout << "  ";
-        }
-
-        for (int i = 0; i < lineSize - numTiles; i++)
-        {
-            std::cout << BULLET << " ";
-        }
-        for (int i = 0; i < numTiles; i++)
-        {
-            std::cout << " ";
-            TileType type = player->getMosaic()->getLine(j)->getTileType();
-            std::cout << getOutputColour(type) << (char)type << RESET;
-        }
-
-        std::cout << " || ";
-
-        for (int i = 0; i < NUMBER_OF_LINES; i++)
-        {
-            if (player->getMosaic()->getWallLine(j)[i] == true)
-            {
-                std::cout << " ";
-                std::cout << getOutputColour(master_wall[j][i]);
-                std::cout << (char)master_wall[j][i];
-                std::cout << RESET;
-            }
-            else
-            {
-                std::cout << getOutputColour(master_wall[j][i]) << " " << BULLET << RESET;
-            }
+            std::cout << getOutputColour(tile) << (char)tile << RESET << " ";
         }
         std::cout << std::endl;
+        ++count;
+    }   
+}
+
+void Menu::printMosaic(PlayerTree *players)
+{
+    std::cout << std::endl;
+    std::cout << nameHelper(players->getRoot()) << std::endl;
+
+    for (int j = 0; j < NUMBER_OF_LINES; j++)
+    {
+        std::cout << linesHelper(players->getRoot(), j) << std::endl;
     }
-    std::cout << COMMAND << "broken: " << RESET << player->getMosaic()->getBrokenTiles()->toString() << std::endl;
+    std::cout << brokenHelper(players->getRoot()) << std::endl;
+}
+
+std::string Menu::nameHelper(PlayerNode *node)
+{
+    std::string str;
+    str = nameHelperHelper(node);
+
+    if (node->getRightNode() != nullptr)
+    {
+        str.append(nameHelper(node->getRightNode()));
+    }
+    if (node->getLeftNode() != nullptr)
+    {
+        str.append(nameHelper(node->getLeftNode()));
+    }
+    return str;
+}
+
+std::string Menu::nameHelperHelper(PlayerNode *node)
+{
+    std::string str = COMMAND;
+    str.append("Mosaic for ");
+    str.append(PARAMETER);
+    str.append(node->getPlayer()->getName());
+    str.append(RESET);
+    for (int i = 0; i < 64 - (int)str.length(); i++)
+    {
+        str.append(" ");
+    }
+    return str;
+}
+
+std::string Menu::linesHelper(PlayerNode *node, int j)
+{
+    std::string str = std::to_string(j + 1);
+    str.append(": ");
+    int lineSize = node->getPlayer()->getMosaic()->getLine(j)->getMaxSize();
+    int numTiles = node->getPlayer()->getMosaic()->getLine(j)->getNumTiles();
+
+    for (int i = 0; i < 5 - lineSize; i++)
+    {
+        str.append("  ");
+    }
+
+    for (int i = 0; i < lineSize - numTiles; i++)
+    {
+        str.append(BULLET);
+        str.append(" ");
+    }
+    for (int i = 0; i < numTiles; i++)
+    {
+        str.append(" ");
+        TileType type = node->getPlayer()->getMosaic()->getLine(j)->getTileType();
+        str.append(getOutputColour(type));
+        str.push_back(type);
+        str.append(RESET);
+    }
+
+    str.append(" || ");
+
+    for (int i = 0; i < NUMBER_OF_LINES; i++)
+    {
+        if (node->getPlayer()->getMosaic()->getWallLine(j)[i] == true)
+        {
+            str.append(" ");
+            str.append(getOutputColour(master_wall[j][i]));
+            str.push_back(master_wall[j][i]);
+            str.append(RESET);
+        }
+        else
+        {
+            str.append(getOutputColour(master_wall[j][i]));
+            str.append(" ");
+            str.append(BULLET);
+            str.append(RESET);
+        }
+    }
+    str.append("    ");
+    if (node->getRightNode() != nullptr)
+    {
+        str.append(linesHelper(node->getRightNode(), j));
+    }
+    if (node->getLeftNode() != nullptr)
+    {
+        str.append(linesHelper(node->getLeftNode(), j));
+    }
+    return str;
+}
+
+std::string Menu::brokenHelper(PlayerNode *node)
+{
+    std::string str = COMMAND;
+    str.append("broken: ");
+    str.append(RESET);
+    str.append(node->getPlayer()->getMosaic()->getBrokenTiles()->toString());
+
+    for (int i = 0; i < 63 - (int)str.length(); i++)
+    {
+        str.append(" ");
+    }
+
+    if (node->getRightNode() != nullptr)
+    {
+        str.append(brokenHelper(node->getRightNode()));
+    }
+    if (node->getLeftNode() != nullptr)
+    {
+        str.append(brokenHelper(node->getLeftNode()));
+    }
+    return str;
 }
 
 std::string Menu::getOutputColour(TileType tileType)
@@ -160,13 +259,11 @@ void Menu::gameOver(Player *player)
     printScore(player->getName(), player->getScore());
 }
 
-void Menu::gameOver(string name1, string name2, int score)
+void Menu::gameOver()
 {
     std::cout << std::endl;
     std::cout << ALERT << "=== Game Over ===" << RESET << std::endl;
     std::cout << "Draw!" << std::endl;
-    std::cout << "Player " << PARAMETER << name1 << RESET << " score: " << PARAMETER << score << RESET << std::endl;
-    std::cout << "Player " << PARAMETER << name2 << RESET << " score: " << PARAMETER << score << RESET << std::endl;
 }
 
 void Menu::help(string context)
@@ -183,10 +280,11 @@ void Menu::help(string context)
     if (context == "menu")
     {
         std::cout << "  Numerals " << COMMAND << "1,2,3,4" << RESET << " select the corresponding menu item" << std::endl;
-    } if (context == "replay"){
+    }
+    if (context == "replay")
+    {
         std::cout << COMMAND << "  'next'" << RESET << " or " << COMMAND << "'n' " << RESET << "will advance to the next turn" << std::endl;
         std::cout << COMMAND << "  'resume'" << RESET << " or " << COMMAND << "'r' " << RESET << "will resume normal play at the current turn" << std::endl;
         std::cout << "  If the replay history concludes before the end of the game, play will continue normally" << std::endl;
     }
-
 }

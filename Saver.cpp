@@ -24,50 +24,45 @@ void Saver::save(GameEngine *gameEngine, std::ofstream &outputStream)
 {
     outputStream << (gameEngine->getSeed()) << std::endl;
 
-    outputStream << (gameEngine->getPlayer(0) == gameEngine->getPlayerTurnID() ? "true" : "false") << std::endl;
-    // Player 1 index
-    outputStream << gameEngine->getPlayer(0)->getName() << std::endl;
-    outputStream << gameEngine->getPlayer(0)->getScore() << std::endl;
+    outputStream << gameEngine->getNumPlayers() << std::endl;
+    int numCenters = gameEngine->getCenterPile().size();
+    outputStream << numCenters << std::endl;
 
-    // Player 2 index
-    outputStream << gameEngine->getPlayer(1)->getName() << std::endl;
-    outputStream << gameEngine->getPlayer(1)->getScore() << std::endl;
+    outputStream << gameEngine->getPlayers()->getRoot()->getIndex() << std::endl;
 
-    std::vector<TileType> centerPile = gameEngine->getCenterPile();
-    for (unsigned int i = 0; i < centerPile.size(); ++i)
+    for (int i = 1; i <= gameEngine->getNumPlayers(); i++)
     {
-        outputStream << char(centerPile.at(i));
+        outputStream << gameEngine->getPlayer(i)->getName() << std::endl;
+        outputStream << gameEngine->getPlayer(i)->getScore() << std::endl;
     }
-    outputStream << std::endl;
 
-    for (int i = 0; i < NUM_FACTORIES; ++i)
+    std::vector<std::vector<TileType>> centerPiles = gameEngine->getCenterPile();
+    for (int j = 0; j < numCenters; j++)
+    {
+        for (unsigned int i = 0; i < centerPiles[j].size(); ++i)
+        {
+            outputStream << char(centerPiles[j].at(i));
+        }
+        outputStream << std::endl;
+    }
+    int numFactories = gameEngine->getNumPlayers() * 2 + 1;
+
+    for (int i = 0; i < numFactories; ++i)
     {
         outputStream << gameEngine->getFactory(i)->toStringNoSpace() << std::endl;
     }
 
-    // Player 1 mosiac
-    Mosaic *player1Mosaic = gameEngine->getPlayer(0)->getMosaic();
-    for (int i = 0; i < NUMBER_OF_LINES; ++i)
+    for (int i = 1; i <= gameEngine->getNumPlayers(); i++)
     {
-        outputStream << player1Mosaic->getLine(i)->toString() << std::endl;
+        Mosaic *playerMosaic = gameEngine->getPlayer(i)->getMosaic();
+        for (int i = 0; i < NUMBER_OF_LINES; ++i)
+        {
+            outputStream << playerMosaic->getLine(i)->toString() << std::endl;
+        }
+        outputStream << playerMosaic->getBrokenTiles()->toString() << std::endl;
+
+        outputWall(outputStream, playerMosaic);
     }
-
-    outputStream << player1Mosaic->getBrokenTiles()->toString() << std::endl;
-
-    // Need to output Player 1 wall
-    outputWall(outputStream, player1Mosaic);
-
-    // Player 2 mosiac
-    Mosaic *player2Mosaic = gameEngine->getPlayer(1)->getMosaic();
-    for (int i = 0; i < NUMBER_OF_LINES; ++i)
-    {
-        outputStream << player2Mosaic->getLine(i)->toString() << std::endl;
-    }
-
-    outputStream << player2Mosaic->getBrokenTiles()->toString() << std::endl;
-
-    // Need to output Player 2 wall
-    outputWall(outputStream, player2Mosaic);
 
     outputStream << gameEngine->getLid()->toString() << std::endl;
     outputStream << gameEngine->getBag()->toString() << std::endl;
@@ -96,13 +91,13 @@ GameEngine *Saver::replay(std::string fileName, Menu *menu)
     }
     else
     {
-        replayEngine = new GameEngine(menu, gameEngine->getSeed());
+        replayEngine = new GameEngine(menu, gameEngine->getSeed(), gameEngine->getNumPlayers(), 1);
 
-        for (int i = 0; i < 2; i++)
+        for (int i = 1; i <= gameEngine->getNumPlayers(); i++)
         {
             replayEngine->addPlayer(gameEngine->getPlayer(i)->getName());
         }
-        replayEngine->setPlayerTurn(0);
+        replayEngine->setPlayerTurn(1);
         replayEngine->fillBag();
         std::ifstream logStream("saves/" + fileName + ".log");
         if (logStream.good())
@@ -130,96 +125,81 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
     }
 
     int seed = stoi(lines[0]);
-    GameEngine *gameEngine = new GameEngine(menu, seed);
-    if (currentLine != SAVE_FILE_LINES_LENGTH)
-    {
-        delete gameEngine;
-        throw "Incorrect number of lines, missing info";
-    }
+    int numPlayers = stoi(lines[1]);
+    int numFactories = numPlayers * 2 + 1;
+    int numCenters = stoi(lines[2]);
+    GameEngine *gameEngine = new GameEngine(menu, seed, numPlayers, numCenters);
     char c = '\0';
 
-    // Check if it's player 1's turn
-    bool player1Turn = true;
-    std::istringstream player1TurnStream(lines[1]);
-    if (player1TurnStream.good())
+    int playerTurnIndex = 0;
+    std::istringstream playerTurnStream(lines[3]);
+    if (playerTurnStream.good())
     {
-        std::string value;
-        player1TurnStream >> value;
-        if (value != "true" && value != "false")
+        int value;
+        playerTurnStream >> value;
+        if (value < 1 || value > 4)
         {
             delete gameEngine;
-            throw "Player 1 turn value is invalid";
+            throw "Player turn id is invalid";
         }
-        player1Turn = value == "true";
+        playerTurnIndex = value;
     }
 
-    // player 1
-    if (isWhiteSpace(lines[2]))
+    std::vector<int> playerScores;
+    std::vector<std::string> playerNames;
+    for (int i = 0; i < numPlayers; i++)
     {
-        delete gameEngine;
-        throw "Player 1 name cannot be empty";
-    }
-    std::string player1Name = lines[2];
-    int player1Score;
-    try
-    {
-        player1Score = std::stoi(lines[3]);
-    }
-    catch (...)
-    {
-        delete gameEngine;
-        throw "Player 1 score is not valid";
-    }
-
-    // player 2
-    if (isWhiteSpace(lines[4]))
-    {
-        delete gameEngine;
-        throw "Player 2 name cannot be empty";
-    }
-    std::string player2Name = lines[4];
-    int player2Score;
-    try
-    {
-        player2Score = std::stoi(lines[5]);
-    }
-    catch (...)
-    {
-        delete gameEngine;
-        throw "Player 2 score is not valid";
+        if (isWhiteSpace(lines[i * 2 + 4]))
+        {
+            delete gameEngine;
+            throw "Player name cannot be empty";
+        }
+        playerNames.push_back(lines[i * 2 + 4]);
+        int playerScore;
+        try
+        {
+            playerScore = std::stoi(lines[i * 2 + 5]);
+            playerScores.push_back(playerScore);
+        }
+        catch (...)
+        {
+            delete gameEngine;
+            throw "Player score is not valid";
+        }
     }
 
     // Create center factory
-    std::vector<TileType> centerFactory;
-    std::istringstream centerFactoryStream(lines[6]);
-    while (centerFactoryStream.get(c))
+    for (int i = 0; i < numCenters; i++)
     {
-        if (selectableTile(c) || (c == FIRSTPLAYER && !addedFirstTile))
+        std::vector<TileType> centerFactory;
+        std::istringstream centerFactoryStream(lines[i + 4 + numPlayers * 2]);
+        while (centerFactoryStream.get(c))
         {
-            if (selectableTile(c))
-                ++numberOfEachTile[getTileIndex(c)];
-            addedFirstTile |= c == FIRSTPLAYER;
-            centerFactory.push_back(charToTileType(c));
+            if (selectableTile(c) || (c == FIRSTPLAYER))
+            {
+                if (selectableTile(c))
+                    ++numberOfEachTile[getTileIndex(c)];
+                addedFirstTile |= c == FIRSTPLAYER;
+                centerFactory.push_back(charToTileType(c));
+            }
+            else
+            {
+                delete gameEngine;
+                throw "Problem reading center factory";
+            }
         }
-        else
-        {
-            delete gameEngine;
-            if (addedFirstTile)
-                throw "Duplicate first player tile found in center factory";
-            throw "Problem reading center factory";
-        }
+        gameEngine->fillCenterPile(i, centerFactory);
     }
-    gameEngine->fillCenterPile(centerFactory);
 
     // Create all factories
-    Factory *factories[NUM_FACTORIES] = {nullptr};
-    for (int i = 0; i < NUM_FACTORIES; ++i)
+    Factory *factories[numFactories];
+    for (int i = 0; i < (numFactories); ++i)
     {
         // Create a single factory
         TileType tiles[FACTORY_SIZE] = {NOTILE, NOTILE, NOTILE, NOTILE};
-        if (!lines[7 + i].empty())
+        if (!lines[8 + i + numPlayers].empty())
         {
-            std::istringstream factoryStream(lines[7 + i]);
+            std::istringstream factoryStream(lines[4 + numCenters + i + (numPlayers * 2)]);
             for (int j = 0; j < FACTORY_SIZE; ++j)
             {
                 if (factoryStream.get(c))
@@ -257,35 +237,25 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
     }
     gameEngine->fillFactories(factories);
 
-    // Create player 1 mosaic
-    Mosaic *player1mosaic = nullptr;
-    try
+    for (int i = 0; i < numPlayers; i++)
     {
-        player1mosaic = generateMosiac(lines, 12, addedFirstTile, numberOfEachTile);
+        Mosaic *playerMosaic = nullptr;
+        try
+        {
+            playerMosaic = generateMosiac(lines, (4 + numCenters + numFactories + (numPlayers * 2) + (7 * i)), addedFirstTile, numberOfEachTile);
+        }
+        catch (const char *errorMessage)
+        {
+            delete gameEngine;
+            throw errorMessage;
+        }
+        gameEngine->addPlayer(playerNames[i], playerScores[i], playerMosaic);
     }
-    catch (const char *errorMessage)
-    {
-        delete gameEngine;
-        throw errorMessage;
-    }
-    gameEngine->addPlayer(player1Name, player1Score, player1mosaic);
-
-    // Create player 2 mosaic
-    Mosaic *player2mosaic = nullptr;
-    try
-    {
-        player2mosaic = generateMosiac(lines, 19, addedFirstTile, numberOfEachTile);
-    }
-    catch (const char *errorMessage)
-    {
-        delete gameEngine;
-        throw errorMessage;
-    }
-    gameEngine->addPlayer(player2Name, player2Score, player2mosaic);
 
     // Create lid
     TileList *lid = new TileList();
-    std::istringstream lidStream(lines[26]);
+    int pos = 4 + (7 * numPlayers) + numFactories + (numPlayers * 2) + numCenters;
+    std::istringstream lidStream(lines[pos]);
     while (lidStream.get(c))
     {
         if (!selectableTile(c))
@@ -304,7 +274,7 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
 
     // Create bag
     TileList *bag = new TileList();
-    std::istringstream bagStream(lines[27]);
+    std::istringstream bagStream(lines[pos + 1]);
     while (bagStream.get(c))
     {
         if (!selectableTile(c))
@@ -339,10 +309,8 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
         throw "Incorrect number of tiles, too many tiles in file";
     }
 
-    if (player1Turn)
-        gameEngine->setPlayerTurn(0);
-    else
-        gameEngine->setPlayerTurn(1);
+    if (playerTurnIndex > 0)
+        gameEngine->setPlayerTurn(playerTurnIndex);
     return gameEngine;
 }
 
