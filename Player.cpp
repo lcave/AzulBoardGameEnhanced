@@ -93,9 +93,9 @@ int Player::scoreLine(int lineNum, bool grayboard, Menu &menu)
                 menu.printMessage(str);
                 menu.printMosaic(this);
                 std::stringstream ss(menu.getInput());
-                int row, col;
-                ss >> row >> col;
-                if ((row > 0 && row < 7) && (col > 0 && col < 7))
+                int col;
+                ss >> col;
+                if (col > 0 && col < 7)
                 {
                     bool validPlacement = true;
                     for (int i = 0; i < NUMBER_OF_LINES && validPlacement; i++)
@@ -103,11 +103,12 @@ int Player::scoreLine(int lineNum, bool grayboard, Menu &menu)
                         if (mosaic->getWallLine(i, grayboard)[col] == tile)
                         {
                             validPlacement = false;
+                            menu.printMessage("Can't place tile there");
                         }
                     }
                     if (validPlacement)
                     {
-                        mosaic->setFilled(row - 1, col - 1, tile);
+                        mosaic->setFilled(lineNum, col - 1, tile);
                         lineScore += calcRow(col, lineNum);
                         lineScore += calcCol(col, lineNum);
                         ++lineScore;
