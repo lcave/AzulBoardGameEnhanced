@@ -65,7 +65,41 @@ int main(int argc, char const *argv[])
                     menu.printMessage("Invalid number, try again");
             } while (!inputValid);
 
-            engine = new GameEngine(&menu, seed, numPlayers, numCenters);
+            int gameType = 1;
+            inputValid = false;
+            do
+            {
+                menu.printMessage("Which game mode? (1, 2 or 3");
+                menu.printMessage("1. Standard");
+                menu.printMessage("2. Gray Board");
+                menu.printMessage("3. Six Tiles");
+                try
+                {
+                    gameType = stoi(menu.getInput());
+                }
+                catch (...)
+                {
+                    menu.printMessage("Invalid number, try again");
+                }
+                if (numCenters >= 1 && numCenters <= 3)
+                {
+                    inputValid = true;
+                }
+                else
+                    menu.printMessage("Invalid number, try again");
+            } while (!inputValid);
+
+            bool grayboard = false, sixTiles = false;
+            if (gameType == 2)
+            {
+                grayboard = true;
+            }
+            else if (gameType == 3)
+            {
+                sixTiles = true;
+            }
+
+            engine = new GameEngine(&menu, seed, numPlayers, numCenters, grayboard, sixTiles);
 
             exit = engine->playGameFill();
         }
@@ -82,6 +116,7 @@ int main(int argc, char const *argv[])
                     {
                         if (engine->hasPlayerWon())
                         {
+                            delete engine;
                             throw "Game in save file is complete, use the replay function to review/resume completed games";
                         }
                         else
@@ -111,9 +146,16 @@ int main(int argc, char const *argv[])
                     engine = saver.replay(fileName, &menu);
                     if (engine != nullptr)
                     {
-                        menu.printMessage("Azul game successfully loaded");
-                        engine->toggleReplay();
-                        exit = engine->playGame();
+                        if (engine->getGameMode() == 2)
+                        {
+                           throw "Replay is not enabled for gray board gamemode";
+                        }
+                        else
+                        {
+                            menu.printMessage("Azul game successfully loaded");
+                            engine->toggleReplay();
+                            exit = engine->playGame();
+                        }
                     }
                 }
                 catch (const char *errorMessage)

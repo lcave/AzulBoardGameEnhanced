@@ -9,7 +9,7 @@
 #define FACTORY_SIZE 4
 #define NUM_FACTORIES 5
 
-#define SAVE_FILE_LINES_LENGTH 53
+#define SAVE_FILE_LINES_LENGTH 55
 
 enum TileType
 {
@@ -18,6 +18,7 @@ enum TileType
     DARKBLUE = 'B',
     LIGTHBLUE = 'L',
     BLACK = 'U',
+    ORANGE = 'O',
     FIRSTPLAYER = 'F',
     NOTILE = '.'
 };

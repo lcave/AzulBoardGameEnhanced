@@ -99,3 +99,12 @@ std::string TileList::toString()
     }
     return result;
 }
+
+bool TileList::empty(){
+    bool ret = false;
+    if (length == 0)
+    {
+        ret = true;
+    }
+    return ret;
+}

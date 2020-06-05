@@ -17,6 +17,7 @@ public:
     TileType removeFront();
     TileType removeBack();
     std::string toString();
+    bool empty();
     Node *head;
 
 private:

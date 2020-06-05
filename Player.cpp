@@ -1,11 +1,18 @@
 #include "Player.h"
+#include "Menu.h"
 
-Player::Player(std::string name) : Player(name, 0, new Mosaic())
+Player::Player(std::string name, bool sixtiles, bool grayboard)
 {
+    this->name = name;
+    score = 0;
+    mosaic = new Mosaic(sixtiles, grayboard);
 }
 
-Player::Player(std::string name, int score, Mosaic *mosaic) : name(name), score(score), mosaic(mosaic)
+Player::Player(std::string name, int score, Mosaic *mosaic)
 {
+    this->name = name;
+    this->score = score;
+    this->mosaic = mosaic;
 }
 
 Player::~Player()
@@ -23,11 +30,10 @@ int Player::getScore()
     return score;
 }
 
-std::vector<TileType> Player::calcScore()
+std::vector<TileType> Player::calcScore(bool grayboard, Menu &menu)
 {
     std::vector<TileType> toLid;
-
-    for (int i = 0; i < NUMBER_OF_LINES; i++)
+    for (int i = 0; i < mosaic->getNumLines(); i++)
     {
         if (getMosaic()->getLine(i)->getMaxSize() == getMosaic()->getLine(i)->getNumTiles())
         {
@@ -37,7 +43,7 @@ std::vector<TileType> Player::calcScore()
                 toLid.push_back(tile);
             }
         }
-        score += scoreLine(i);
+        score += scoreLine(i, grayboard, menu);
     }
     int size = mosaic->getBrokenTiles()->size();
     for (int i = 0; i < size; i++)
@@ -48,11 +54,15 @@ std::vector<TileType> Player::calcScore()
         }
         else if (i <= 4)
         {
-            score -= 2;
+            score = score - 2;
         }
-        else
+        else if (i <= 6)
         {
-            score -= 3;
+            score = score - 3;
+        }
+        else if (i == 7)
+        {
+            score = score - 4;
         }
         TileType tile = mosaic->getBrokenTiles()->removeFront();
         if (tile != FIRSTPLAYER)
@@ -64,7 +74,7 @@ std::vector<TileType> Player::calcScore()
     return toLid;
 }
 
-int Player::scoreLine(int lineNum)
+int Player::scoreLine(int lineNum, bool grayboard, Menu &menu)
 {
     int lineScore = 0;
     int numTiles = getMosaic()->getLine(lineNum)->getNumTiles();
@@ -72,16 +82,52 @@ int Player::scoreLine(int lineNum)
     if (getMosaic()->getLine(lineNum)->getMaxSize() == numTiles)
     {
         TileType tile = getMosaic()->getLine(lineNum)->getTileType();
-        getMosaic()->getLine(lineNum)->removeTiles();
 
-        for (int i = 0; i < NUMBER_OF_LINES; i++)
+        if (grayboard)
         {
-            if (master_wall[lineNum][i] == tile)
+            bool valid = false;
+            while (!valid)
             {
-                mosaic->setFilled(lineNum, i, true);
-                lineScore += calcRow(i, lineNum);
-                lineScore += calcCol(i, lineNum);
-                ++lineScore;
+                std::string str = "Enter position to place tiles from line ";
+                str.append(std::to_string(lineNum + 1));
+                menu.printMessage(str);
+                menu.printMosaic(this);
+                std::stringstream ss(menu.getInput());
+                int row, col;
+                ss >> row >> col;
+                if ((row > 0 && row < 7) && (col > 0 && col < 7))
+                {
+                    bool validPlacement = true;
+                    for (int i = 0; i < NUMBER_OF_LINES && validPlacement; i++)
+                    {
+                        if (mosaic->getWallLine(i, grayboard)[col] == tile)
+                        {
+                            validPlacement = false;
+                        }
+                    }
+                    if (validPlacement)
+                    {
+                        mosaic->setFilled(row - 1, col - 1, tile);
+                        lineScore += calcRow(col, lineNum);
+                        lineScore += calcCol(col, lineNum);
+                        ++lineScore;
+                        valid = true;
+                    }
+                }
+            }
+        }
+        getMosaic()->getLine(lineNum)->removeTiles();
+        if (!grayboard)
+        {
+            for (int i = 0; i < mosaic->getNumLines(); i++)
+            {
+                if (master_wall[lineNum][i] == tile)
+                {
+                    mosaic->setFilled(lineNum, i, true);
+                    lineScore += calcRow(i, lineNum);
+                    lineScore += calcCol(i, lineNum);
+                    ++lineScore;
+                }
             }
         }
     }
@@ -92,25 +138,26 @@ int Player::calcRow(int index, int line)
 {
     int score = 0;
     int pos = index + 1;
+    int lines = mosaic->getNumLines();
 
-    do
+    while (pos + 1 < lines)
     {
         if (mosaic->isFilled(line, pos))
         {
             ++score;
         }
         ++pos;
-    } while (pos + 1 < NUMBER_OF_LINES);
+    }
 
     pos = index - 1;
-    do
+    while (pos - 1 >= 0)
     {
         if (mosaic->isFilled(line, pos))
         {
             ++score;
         }
         --pos;
-    } while (pos - 1 >= 0);
+    }
 
     return score;
 }
@@ -119,6 +166,7 @@ int Player::calcCol(int index, int line)
 {
     int score = 0;
     int pos = line + 1;
+    int lines = mosaic->getNumLines();
 
     do
     {
@@ -127,17 +175,17 @@ int Player::calcCol(int index, int line)
             ++score;
         }
         pos++;
-    } while (pos + 1 < NUMBER_OF_LINES);
+    } while (pos + 1 < lines);
 
     pos = line - 1;
-    do
+    while (pos - 1 >= 0)
     {
         if (mosaic->isFilled(pos, index))
         {
             ++score;
         }
         --pos;
-    } while (pos - 1 >= 0);
+    }
 
     return score;
 }
@@ -147,15 +195,24 @@ Mosaic *Player::getMosaic()
     return mosaic;
 }
 
-bool Player::hasWon()
+bool Player::hasWon(bool grayboard)
 {
     int line = 0;
     bool hasWon = false;
-    while (!hasWon && line < NUMBER_OF_LINES)
+    int lines = mosaic->getNumLines();
+    while (!hasWon && line < lines)
     {
         hasWon = true;
-        for (int col = 0; col < NUMBER_OF_LINES; ++col)
-            hasWon &= mosaic->isFilled(line, col);
+        for (int col = 0; col < lines; ++col)
+            if (!grayboard)
+            {
+                hasWon &= mosaic->isFilled(line, col);
+            }
+            else
+            {
+                hasWon &= (mosaic->isFilled(line, col, grayboard) != NOTILE);
+            }
+
         ++line;
     }
     return hasWon;

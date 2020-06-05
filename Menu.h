@@ -15,8 +15,11 @@
 #include "Player.h"
 #include "Menu.h"
 #include "PlayerTree.h"
+#include "PlayerNode.h"
 
 class PlayerTree;
+class PlayerNode;
+class Player;
 
 class Menu
 {
@@ -36,7 +39,8 @@ public:
     //Print centerPile
     void printFactory(std::vector<std::vector<TileType>> centerPiles);
     //Print player's mosaic
-    void printMosaic(PlayerTree *players);
+    void printMosaic(PlayerTree *players, bool grayboard);
+    void printMosaic(Player *player);
     //Print player's score
     void printScore(string name, int score);
     //Print game results with winner
@@ -49,7 +53,7 @@ public:
 private:
     std::string nameHelper(PlayerNode *node);
     std::string nameHelperHelper(PlayerNode *node);
-    std::string linesHelper(PlayerNode *node, int j);
+    std::string linesHelper(PlayerNode *node, int j, bool grayboard);
     std::string brokenHelper(PlayerNode *node);
     std::string getOutputColour(TileType tileType);
     std::string factoryHelper(Factory *factory, int i);
@@ -60,6 +64,13 @@ private:
                                                               BLACK, LIGTHBLUE, DARKBLUE, YELLOW, RED,
                                                               RED, BLACK, LIGTHBLUE, DARKBLUE, YELLOW,
                                                               YELLOW, RED, BLACK, LIGTHBLUE, DARKBLUE};
+
+    TileType master_wall_6[NUMBER_OF_LINES + 1][NUMBER_OF_LINES + 1] = {DARKBLUE, YELLOW, ORANGE, RED, BLACK, LIGTHBLUE,
+                                                                        LIGTHBLUE, DARKBLUE, YELLOW, ORANGE, RED, BLACK,
+                                                                        BLACK, LIGTHBLUE, DARKBLUE, YELLOW, ORANGE, RED,
+                                                                        RED, BLACK, LIGTHBLUE, DARKBLUE, YELLOW, ORANGE,
+                                                                        ORANGE, RED, BLACK, LIGTHBLUE, DARKBLUE, YELLOW,
+                                                                        YELLOW, ORANGE, RED, BLACK, LIGTHBLUE, DARKBLUE};
 };
 
 #endif // !MENU_H

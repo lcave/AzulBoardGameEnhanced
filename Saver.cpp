@@ -7,6 +7,13 @@ TileType Master_Wall[5][5]{DARKBLUE, YELLOW, RED, BLACK, LIGTHBLUE,
                            RED, BLACK, LIGTHBLUE, DARKBLUE, YELLOW,
                            YELLOW, RED, BLACK, LIGTHBLUE, DARKBLUE};
 
+TileType master_wall_6[NUMBER_OF_LINES + 1][NUMBER_OF_LINES + 1] = {DARKBLUE, YELLOW, ORANGE, RED, BLACK, LIGTHBLUE,
+                                                                    LIGTHBLUE, DARKBLUE, YELLOW, ORANGE, RED, BLACK,
+                                                                    BLACK, LIGTHBLUE, DARKBLUE, YELLOW, ORANGE, RED,
+                                                                    RED, BLACK, LIGTHBLUE, DARKBLUE, YELLOW, ORANGE,
+                                                                    ORANGE, RED, BLACK, LIGTHBLUE, DARKBLUE, YELLOW,
+                                                                    YELLOW, ORANGE, RED, BLACK, LIGTHBLUE, DARKBLUE};
+
 void Saver::save(GameEngine *gameEngine, std::string fileName)
 {
     string path = "saves/" + fileName;
@@ -27,6 +34,7 @@ void Saver::save(GameEngine *gameEngine, std::ofstream &outputStream)
     outputStream << gameEngine->getNumPlayers() << std::endl;
     int numCenters = gameEngine->getCenterPile().size();
     outputStream << numCenters << std::endl;
+    outputStream << gameEngine->getGameMode() << std::endl;
 
     outputStream << gameEngine->getPlayers()->getRoot()->getIndex() << std::endl;
 
@@ -55,13 +63,15 @@ void Saver::save(GameEngine *gameEngine, std::ofstream &outputStream)
     for (int i = 1; i <= gameEngine->getNumPlayers(); i++)
     {
         Mosaic *playerMosaic = gameEngine->getPlayer(i)->getMosaic();
-        for (int i = 0; i < NUMBER_OF_LINES; ++i)
+        for (int i = 0; i < playerMosaic->getNumLines(); ++i)
         {
             outputStream << playerMosaic->getLine(i)->toString() << std::endl;
         }
         outputStream << playerMosaic->getBrokenTiles()->toString() << std::endl;
+        int gameMode = gameEngine->getGameMode();
+        bool grayboard = (gameMode == 2) ? true : false;
 
-        outputWall(outputStream, playerMosaic);
+        outputWall(outputStream, playerMosaic, grayboard);
     }
 
     outputStream << gameEngine->getLid()->toString() << std::endl;
@@ -91,11 +101,21 @@ GameEngine *Saver::replay(std::string fileName, Menu *menu)
     }
     else
     {
-        replayEngine = new GameEngine(menu, gameEngine->getSeed(), gameEngine->getNumPlayers(), 1);
+        bool grayboard = false, sixTiles = false;
+        if (gameEngine->getGameMode() == 2)
+        {
+            grayboard = true;
+        }
+        if (gameEngine->getGameMode() == 3)
+        {
+            sixTiles = true;
+        }
+        replayEngine = new GameEngine(menu, gameEngine->getSeed(), gameEngine->getNumPlayers(), 1, grayboard, sixTiles);
 
         for (int i = 1; i <= gameEngine->getNumPlayers(); i++)
         {
-            replayEngine->addPlayer(gameEngine->getPlayer(i)->getName());
+            std::string playerName = gameEngine->getPlayer(i)->getName();
+            replayEngine->addPlayer(playerName);
         }
         replayEngine->setPlayerTurn(1);
         replayEngine->fillBag();
@@ -110,6 +130,7 @@ GameEngine *Saver::replay(std::string fileName, Menu *menu)
         }
     }
     delete gameEngine;
+    gameEngine = nullptr;
     return replayEngine;
 }
 
@@ -128,11 +149,22 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
     int numPlayers = stoi(lines[1]);
     int numFactories = numPlayers * 2 + 1;
     int numCenters = stoi(lines[2]);
-    GameEngine *gameEngine = new GameEngine(menu, seed, numPlayers, numCenters);
+
+    bool grayboard = false, sixTiles = false;
+    if (stoi(lines[3]) == 2)
+    {
+        grayboard = true;
+    }
+    if (stoi(lines[3]) == 3)
+    {
+        sixTiles = true;
+    }
+
+    GameEngine *gameEngine = new GameEngine(menu, seed, numPlayers, numCenters, grayboard, sixTiles);
     char c = '\0';
 
     int playerTurnIndex = 0;
-    std::istringstream playerTurnStream(lines[3]);
+    std::istringstream playerTurnStream(lines[4]);
     if (playerTurnStream.good())
     {
         int value;
@@ -145,20 +177,22 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
         playerTurnIndex = value;
     }
 
+    int startingLine = 5;
+
     std::vector<int> playerScores;
     std::vector<std::string> playerNames;
     for (int i = 0; i < numPlayers; i++)
     {
-        if (isWhiteSpace(lines[i * 2 + 4]))
+        if (isWhiteSpace(lines[startingLine]))
         {
             delete gameEngine;
             throw "Player name cannot be empty";
         }
-        playerNames.push_back(lines[i * 2 + 4]);
+        playerNames.push_back(lines[startingLine]);
         int playerScore;
         try
         {
-            playerScore = std::stoi(lines[i * 2 + 5]);
+            playerScore = std::stoi(lines[startingLine + 1]);
             playerScores.push_back(playerScore);
         }
         catch (...)
@@ -166,13 +200,14 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
             delete gameEngine;
             throw "Player score is not valid";
         }
+        startingLine += 2;
     }
 
     // Create center factory
     for (int i = 0; i < numCenters; i++)
     {
         std::vector<TileType> centerFactory;
-        std::istringstream centerFactoryStream(lines[i + 4 + numPlayers * 2]);
+        std::istringstream centerFactoryStream(lines[startingLine]);
         while (centerFactoryStream.get(c))
         {
             if (selectableTile(c) || (c == FIRSTPLAYER))
@@ -189,6 +224,7 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
             }
         }
         gameEngine->fillCenterPile(i, centerFactory);
+        ++startingLine;
     }
 
     // Create all factories
@@ -199,7 +235,7 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
         TileType tiles[FACTORY_SIZE] = {NOTILE, NOTILE, NOTILE, NOTILE};
         if (!lines[8 + i + numPlayers].empty())
         {
-            std::istringstream factoryStream(lines[4 + numCenters + i + (numPlayers * 2)]);
+            std::istringstream factoryStream(lines[startingLine]);
             for (int j = 0; j < FACTORY_SIZE; ++j)
             {
                 if (factoryStream.get(c))
@@ -224,6 +260,7 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
                     throw "A factory is missing some tiles";
                 }
             }
+            ++startingLine;
         }
 
         if (isValidFactory(tiles))
@@ -242,7 +279,8 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
         Mosaic *playerMosaic = nullptr;
         try
         {
-            playerMosaic = generateMosiac(lines, (4 + numCenters + numFactories + (numPlayers * 2) + (7 * i)), addedFirstTile, numberOfEachTile);
+            playerMosaic = generateMosiac(lines, (startingLine), addedFirstTile, numberOfEachTile, sixTiles, grayboard);
+            startingLine += 7 + sixTiles;
         }
         catch (const char *errorMessage)
         {
@@ -254,8 +292,7 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
 
     // Create lid
     TileList *lid = new TileList();
-    int pos = 4 + (7 * numPlayers) + numFactories + (numPlayers * 2) + numCenters;
-    std::istringstream lidStream(lines[pos]);
+    std::istringstream lidStream(lines[startingLine]);
     while (lidStream.get(c))
     {
         if (!selectableTile(c))
@@ -270,11 +307,12 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
             lid->addBack(charToTileType(c));
         }
     }
+    ++startingLine;
     gameEngine->fillLid(lid);
 
     // Create bag
     TileList *bag = new TileList();
-    std::istringstream bagStream(lines[pos + 1]);
+    std::istringstream bagStream(lines[startingLine]);
     while (bagStream.get(c))
     {
         if (!selectableTile(c))
@@ -298,12 +336,13 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
     }
 
     int sumOfTiles = calculateSumOfTiles(numberOfEachTile) + (addedFirstTile ? 1 : 0);
-    if (sumOfTiles < 101)
+    int tileSum = sixTiles ? 121 : 101;
+    if (sumOfTiles < tileSum)
     {
         delete gameEngine;
         throw "Incorrect number of tiles, not enough tiles in file";
     }
-    else if (sumOfTiles > 101)
+    else if (sumOfTiles > tileSum)
     {
         delete gameEngine;
         throw "Incorrect number of tiles, too many tiles in file";
@@ -314,43 +353,75 @@ GameEngine *Saver::load(std::istream &inputStream, Menu *menu)
     return gameEngine;
 }
 
-void Saver::outputWall(std::ofstream &outputStream, Mosaic *mosaic)
+void Saver::outputWall(std::ofstream &outputStream, Mosaic *mosaic, bool grayboard)
 {
-    for (int row = 0; row < NUMBER_OF_LINES; ++row)
+    for (int row = 0; row < mosaic->getNumLines(); ++row)
     {
-        for (int col = 0; col < NUMBER_OF_LINES; ++col)
+        for (int col = 0; col < mosaic->getNumLines(); ++col)
         {
-            if (mosaic->isFilled(row, col))
-                outputStream << char(Master_Wall[row][col]);
+            if (mosaic->getNumLines() == 6)
+            {
+                if (mosaic->isFilled(row, col))
+                    outputStream << char(master_wall_6[row][col]);
+                else
+                    outputStream << tileTypeToLower(master_wall_6[row][col]);
+            }
+            else if (!grayboard)
+            {
+                if (mosaic->isFilled(row, col))
+                    outputStream << char(Master_Wall[row][col]);
+                else
+                    outputStream << tileTypeToLower(Master_Wall[row][col]);
+            }
             else
-                outputStream << tileTypeToLower(Master_Wall[row][col]);
+            {
+                outputStream << char(mosaic->getWallLine(row, grayboard)[col]);
+            }
         }
     }
     outputStream << std::endl;
 }
 
-Mosaic *Saver::generateMosiac(std::string lines[SAVE_FILE_LINES_LENGTH], int startingLine, bool &addedFirstTile, int numberOfEachTile[])
+Mosaic *Saver::generateMosiac(std::string lines[SAVE_FILE_LINES_LENGTH], int startingLine, bool &addedFirstTile, int numberOfEachTile[], bool sixTiles, bool grayboard)
 {
-    Mosaic *mosaic = new Mosaic();
-    std::istringstream wallStream(lines[startingLine + 6]);
-    for (int row = 0; row < NUMBER_OF_LINES; ++row)
+    Mosaic *mosaic = new Mosaic(sixTiles, grayboard);
+
+    int numLines = 5;
+    if (sixTiles)
     {
-        for (int col = 0; col < NUMBER_OF_LINES; ++col)
+        ++numLines;
+    }
+    std::istringstream wallStream(lines[startingLine + (numLines + 1)]);
+    for (int row = 0; row < numLines; ++row)
+    {
+        for (int col = 0; col < numLines; ++col)
         {
             char c = '\0';
             if (wallStream.get(c))
             {
-                if (selectableTile(std::toupper(c)))
+                if (!grayboard)
                 {
-                    if (std::isupper(c))
-                        ++numberOfEachTile[getTileIndex(c)];
-                    mosaic->setFilled(row, col, std::isupper(c));
+                    if (selectableTile(std::toupper(c)))
+                    {
+                        if (std::isupper(c))
+                            ++numberOfEachTile[getTileIndex(c)];
+                        mosaic->setFilled(row, col, std::isupper(c));
+                    }
+                    else
+                    {
+                        delete mosaic;
+                        throw "A mosaic wall contains an invalid tile";
+                    }
                 }
                 else
                 {
-                    delete mosaic;
-                    throw "A mosaic wall contains an invalid tile";
+                    if (c != '.')
+                    {
+                       mosaic->setFilled(row, col, charToTileType(c));
+                    }
+                    
                 }
+                
             }
             else
             {
@@ -360,7 +431,7 @@ Mosaic *Saver::generateMosiac(std::string lines[SAVE_FILE_LINES_LENGTH], int sta
         }
     }
 
-    for (int i = 0; i < NUMBER_OF_LINES; ++i)
+    for (int i = 0; i < numLines; ++i)
     {
         std::istringstream lineStream(lines[startingLine + i]);
         char c = '\0';
@@ -368,7 +439,7 @@ Mosaic *Saver::generateMosiac(std::string lines[SAVE_FILE_LINES_LENGTH], int sta
         {
             lineStream >> c;
             TileType toAdd = charToTileType(c);
-            if (c == NOTILE || (selectableTile(c) && mosaic->getLine(i)->canAddTiles(toAdd) && !mosaic->isFilled(i, toAdd)))
+            if (c == NOTILE || (selectableTile(c) && mosaic->getLine(i)->canAddTiles(toAdd) && (grayboard || !mosaic->isFilled(i, toAdd))))
             {
                 if (c != NOTILE)
                     ++numberOfEachTile[getTileIndex(c)];
@@ -382,7 +453,7 @@ Mosaic *Saver::generateMosiac(std::string lines[SAVE_FILE_LINES_LENGTH], int sta
         }
     }
 
-    std::istringstream brokenTilesStream(lines[startingLine + 5]);
+    std::istringstream brokenTilesStream(lines[startingLine + numLines]);
     char c = '\0';
     while (brokenTilesStream.get(c))
     {
@@ -396,9 +467,6 @@ Mosaic *Saver::generateMosiac(std::string lines[SAVE_FILE_LINES_LENGTH], int sta
         else
         {
             delete mosaic;
-            if (addedFirstTile)
-                throw "Duplicate first player tile found in a mosaic";
-            throw "There is a problem in the broken tiles";
         }
     }
 
@@ -407,7 +475,7 @@ Mosaic *Saver::generateMosiac(std::string lines[SAVE_FILE_LINES_LENGTH], int sta
 
 void Saver::cleanUpFactories(Factory *factories[])
 {
-    for (int i = 0; i < NUM_FACTORIES; ++i)
+    for (int i = 0; i < 9; ++i)
         if (factories[i] != nullptr)
             delete factories[i];
 }

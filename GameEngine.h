@@ -18,7 +18,7 @@ class GameEngine
 {
 public:
     //Constructor
-    GameEngine(Menu *menu, int seed, int numPlayers, int numCenters);
+    GameEngine(Menu *menu, int seed, int numPlayers, int numCenters, bool grayboard, bool sixTiles);
     //Destructor
     ~GameEngine();
     //Fill bag with seed and call playGame()
@@ -64,6 +64,7 @@ public:
     void toggleReplay();
     int getNumPlayers();
     PlayerTree* getPlayers();
+    int getGameMode();
 
 private:
     void handleInput(bool *inputDone, bool *exit);
@@ -89,9 +90,11 @@ private:
     int numCenters;
     int turnNum;
     bool replay;
+    bool grayboard;
+    bool sixTiles;
     std::vector<std::string> log;
     PlayerTree *players;
-    Factory *factories[9];
+    Factory *factories[9] = {NULL};
     std::vector<std::vector<TileType>> centerPiles;
     Player *playerTurnID;
     TileList *bag;

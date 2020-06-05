@@ -4,11 +4,7 @@
 #include "Player.h"
 #include "PlayerNode.h"
 #include "TileList.h"
-
-#include "PlayerTree.h"
 #include "Menu.h"
-
-class Menu;
 
 class PlayerTree
 {
@@ -22,7 +18,7 @@ public:
     Player *findPlayer(int index);
     Player *setFirstPlayer();
     Player *setPlayerTurn(int index);
-    Player *endRound(TileList *lid, Menu *menu);
+    Player *endRound(TileList *lid, Menu *menu, bool grayboard);
     int getNumPlayers();
     Player *winningPlayer();
     PlayerNode *getRoot();
@@ -30,10 +26,9 @@ public:
     void printMosaic(Menu *menu, PlayerNode *node);
 
 private:
-    Player *highestBranchScore(PlayerNode *node);
+    PlayerNode *highestBranchScore(PlayerNode *node);
     Player *searchIndex(PlayerNode *node, int index);
-    Player *searchWinningPlayer(PlayerNode *node, int score);
-    void endRound(TileList *lid, PlayerNode *node, Menu *menu);
+    void endRound(TileList *lid, PlayerNode *node, Menu *menu, bool grayboard);
     PlayerNode *root;
     int numberOfPlayers;
 };

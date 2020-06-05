@@ -5,16 +5,18 @@
 #include <algorithm>
 #include <random>
 
-GameEngine::GameEngine(Menu *menu, int seedIn, int numPlayers, int numCenters) : seed(seedIn),
-                                                                                 numPlayers(numPlayers),
-                                                                                 numCenters(numCenters),
-                                                                                 factories(),
-                                                                                 centerPiles(),
-                                                                                 bag(new TileList()),
-                                                                                 lid(new TileList()),
-                                                                                 menu(menu)
+GameEngine::GameEngine(Menu *menu, int seedIn, int numPlayers,
+                       int numCenters, bool grayboard, bool sixTiles) : seed(seedIn),
+                                                                        numPlayers(numPlayers),
+                                                                        numCenters(numCenters),
+                                                                        factories(),
+                                                                        centerPiles(),
+                                                                        menu(menu)
+
 {
 
+    bag = new TileList();
+    lid = new TileList();
     numFactories = numPlayers * 2 + 1;
     //Create factories
     for (int i = 0; i < (numFactories); ++i)
@@ -30,6 +32,8 @@ GameEngine::GameEngine(Menu *menu, int seedIn, int numPlayers, int numCenters) :
     turnNum = 0;
     replay = false;
     players = new PlayerTree();
+    this->grayboard = grayboard;
+    this->sixTiles = sixTiles;
 }
 
 GameEngine::~GameEngine()
@@ -37,7 +41,10 @@ GameEngine::~GameEngine()
     for (int i = 0; i < numFactories; ++i)
     {
         if (&factories[i] != nullptr)
+        {
             delete factories[i];
+            factories[i] = nullptr;
+        }
     }
     if (bag != nullptr)
         delete bag;
@@ -76,10 +83,6 @@ bool GameEngine::playGame()
 
     while (!exit && !hasPlayerWon())
     {
-        if (replay && turnNum >= (int)log.size())
-        {
-            replay = false;
-        }
         exit = playRound();
     }
     //Check if a player has won after each round
@@ -109,8 +112,8 @@ bool GameEngine::playGame()
             string filename;
             ss >> filename;
 
-            Saver *saver = new Saver();
-            saver->save(this, filename);
+            Saver saver;
+            saver.save(this, filename);
         }
     }
     return exit;
@@ -133,13 +136,12 @@ bool GameEngine::playRound()
 
             for (int j = 0; j < FACTORY_SIZE; j++)
             {
-                if (bag->size() == 0)
+                if (bag->empty())
                 {
                     TileList *tmp = bag;
                     bag = lid;
                     lid = tmp;
                     tmp = nullptr;
-                    delete tmp;
                 }
 
                 temp[j] = bag->removeFront();
@@ -160,12 +162,17 @@ bool GameEngine::playRound()
         menu->printFactory(centerPiles);
         menu->printFactory(factories);
 
-        menu->printMosaic(players);
+        menu->printMosaic(players, grayboard);
 
         //Bool to check whether input command has been executed
         bool inputDone = false;
 
         //Handle user input
+        if (replay && turnNum >= (int)log.size())
+        {
+            replay = false;
+            menu->printMessage("Gameplay resumed!");
+        }
         if (replay)
         {
             do
@@ -187,7 +194,7 @@ bool GameEngine::playRound()
     {
         //Distribute tiles to walls
         menu->printMessage("=== END OF ROUND ===");
-        playerTurnID = players->endRound(lid, menu);
+        playerTurnID = players->endRound(lid, menu, grayboard);
     }
     return exit;
 }
@@ -222,7 +229,7 @@ void GameEngine::handleInput(bool *inputDone, bool *exit)
             errorMessage = convertCommand(inputDone, &ss);
         }
 
-        if (!*inputDone)
+        if (!*inputDone && command != "help")
             menu->printMessage("Invalid input: " + errorMessage + ", try again");
     }
     else
@@ -252,6 +259,11 @@ void GameEngine::handleReplay(bool *inputDone, bool *exit)
         else if (next == "resume" || next == "r")
         {
             replay = false;
+            for (int i = turnNum; i < (int)log.size(); i++)
+            {
+                log.erase(log.end());
+            }
+            menu->printMessage("Gameplay resumed!");
         }
         if (!inputDone)
         {
@@ -322,7 +334,7 @@ std::string GameEngine::convertCommand(bool *inputDone, std::string str)
     char colour = '\0';
     if (str.at(5) == 'C')
     {
-        factoryNum = (str.at(6)-48) - (2 * (str.at(6)-48));
+        factoryNum = (str.at(6) - 48) - (2 * (str.at(6) - 48));
         colour = str.at(8);
         lineNum = str.at(10) - 48;
     }
@@ -395,7 +407,12 @@ std::string GameEngine::centerCommand(int factoryNum, bool *inputDone, TileType 
     if (!centerPiles[pileNum].empty() && centerPileContains(pileNum, tileType))
     {
         //If moving tiles straight to broken line
-        if (lineNum == 5)
+        int broken = 5;
+        if (sixTiles)
+        {
+            ++broken;
+        }
+        if (lineNum == broken)
         {
             if (containsFirstPlayer())
             {
@@ -405,7 +422,7 @@ std::string GameEngine::centerCommand(int factoryNum, bool *inputDone, TileType 
             *inputDone = true;
         }
         //If moving tiles to pattern line
-        else if (!playerTurnID->getMosaic()->isFilled(lineNum, tileType) &&
+        else if ((grayboard || (!playerTurnID->getMosaic()->isFilled(lineNum, tileType))) &&
                  playerTurnID->getMosaic()->getLine(lineNum)->canAddTiles(tileType))
         {
             if (containsFirstPlayer())
@@ -433,7 +450,12 @@ std::string GameEngine::factoryCommand(bool *inputDone, int factoryNum, int line
         if (factories[factoryNum]->contains(tileType))
         {
             //if Adding straight to broken tiles
-            if (lineNum == 5)
+            int broken = 5;
+            if (sixTiles)
+            {
+                ++broken;
+            }
+            if (lineNum == broken)
             {
                 playerTurnID->getMosaic()->addToBrokenTiles(factories[factoryNum]->draw(tileType), tileType);
                 int pile = 0;
@@ -465,7 +487,7 @@ std::string GameEngine::factoryCommand(bool *inputDone, int factoryNum, int line
                 *inputDone = true;
             }
             //Adding to pattern line
-            else if (!playerTurnID->getMosaic()->isFilled(lineNum, tileType) &&
+            else if ((grayboard || (!playerTurnID->getMosaic()->isFilled(lineNum, tileType))) &&
                      playerTurnID->getMosaic()->getLine(lineNum)->canAddTiles(tileType))
             {
                 playerTurnID->getMosaic()->insertTilesIntoLine(lineNum, factories[factoryNum]->draw(tileType), tileType);
@@ -511,7 +533,12 @@ std::string GameEngine::factoryCommand(bool *inputDone, int factoryNum, int line
 
 bool GameEngine::validLineNum(int lineNum)
 {
-    return lineNum >= 0 && lineNum <= NUMBER_OF_LINES;
+    int lines = 5;
+    if (sixTiles)
+    {
+        ++lines;
+    }
+    return lineNum >= 0 && lineNum <= lines;
 }
 
 bool GameEngine::validFactoryNum(int factoryNum)
@@ -561,22 +588,43 @@ Factory *GameEngine::getFactory(int position)
 void GameEngine::fillBag()
 {
     //Create both a bag and shuffle vector
-    TileType tileTypes[5] = {BLACK, LIGTHBLUE, DARKBLUE, YELLOW, RED};
-    TileType temp[100];
 
-    //Store all tiles in temp bag SORTED
-    for (int i = 0; i < 100; i++)
+    std::vector<TileType> temp;
+    if (sixTiles)
     {
-        temp[i] = tileTypes[i / 20];
+        TileType tileTypes[6] = {BLACK, LIGTHBLUE, DARKBLUE, YELLOW, ORANGE, RED};
+        //Store all tiles in temp bag SORTED
+        for (int i = 0; i < 120; i++)
+        {
+            temp.push_back(tileTypes[i / 20]);
+        }
+
+        //Shuffle temp bag
+        std::shuffle(std::begin(temp), std::end(temp), std::default_random_engine(seed));
+
+        //Store shuffled tiles into the game bag
+        for (int i = 0; i < 120; i++)
+        {
+            bag->addBack(temp[i]);
+        }
     }
-
-    //Shuffle temp bag
-    std::shuffle(std::begin(temp), std::end(temp), std::default_random_engine(seed));
-
-    //Store shuffled tiles into the game bag
-    for (int i = 0; i < 100; i++)
+    else
     {
-        bag->addBack(temp[i]);
+        TileType tileTypes[5] = {BLACK, LIGTHBLUE, DARKBLUE, YELLOW, RED};
+        //Store all tiles in temp bag SORTED
+        for (int i = 0; i < 100; i++)
+        {
+            temp.push_back(tileTypes[i / 20]);
+        }
+
+        //Shuffle temp bag
+        std::shuffle(std::begin(temp), std::end(temp), std::default_random_engine(seed));
+
+        //Store shuffled tiles into the game bag
+        for (int i = 0; i < 100; i++)
+        {
+            bag->addBack(temp[i]);
+        }
     }
 }
 
@@ -655,12 +703,15 @@ void GameEngine::fillFactories(Factory *factories[])
 void GameEngine::addPlayer(string name)
 {
     //creates a new player
-    addPlayer(name, 0, new Mosaic());
+    Mosaic *mosaic = new Mosaic(sixTiles, grayboard);
+    int score = 0;
+    addPlayer(name, score, mosaic);
 }
 
 void GameEngine::addPlayer(std::string name, int score, Mosaic *mosaic)
 {
-    players->addPlayer(new Player(name, score, mosaic));
+    Player *player = new Player(name, score, mosaic);
+    players->addPlayer(player);
 }
 
 void GameEngine::addPlayers()
@@ -718,7 +769,7 @@ bool GameEngine::hasPlayerWon()
     bool playerWon = false;
     int playerIndex = 1;
     while (!playerWon && playerIndex < players->getNumPlayers())
-        playerWon = players->findPlayer(playerIndex++)->hasWon();
+        playerWon = players->findPlayer(playerIndex++)->hasWon(grayboard);
     return playerWon;
 }
 
@@ -742,4 +793,18 @@ int GameEngine::getSeed()
 PlayerTree *GameEngine::getPlayers()
 {
     return players;
+}
+
+int GameEngine::getGameMode()
+{
+    int mode = 1;
+    if (grayboard)
+    {
+        mode = 2;
+    }
+    if (sixTiles)
+    {
+        mode = 3;
+    }
+    return mode;
 }

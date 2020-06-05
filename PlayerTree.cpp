@@ -39,6 +39,10 @@ Player *PlayerTree::switchPlayerTurn()
         {
             root->setRightNode(tmp->getBottomNode());
         } while (tmp->getLeftNode() != nullptr);
+        if (root->getRightNode() != tmp)
+        {
+            root->setRightNode(tmp);
+        }
     }
     else
     {
@@ -117,26 +121,30 @@ Player *PlayerTree::setPlayerTurn(int index)
     return root->getPlayer();
 }
 
-Player *PlayerTree::endRound(TileList *lid, Menu *menu)
+Player *PlayerTree::endRound(TileList *lid, Menu *menu, bool grayboard)
 {
     Player *player = setFirstPlayer();
-    endRound(lid, root, menu);
+    endRound(lid, root, menu, grayboard);
     return player;
 }
 
-void PlayerTree::endRound(TileList *lid, PlayerNode *node, Menu *menu)
+void PlayerTree::endRound(TileList *lid, PlayerNode *node, Menu *menu, bool grayboard)
 {
-    if (node != nullptr)
+    Player *player = node->getPlayer();
+    std::vector<TileType> lidTiles = player->calcScore(grayboard, *menu);
+    for (TileType tile : lidTiles)
     {
-        Player *player = node->getPlayer();
-        std::vector<TileType> lidTiles = player->calcScore();
-        for (TileType tile : lidTiles)
-        {
-            lid->addBack(tile);
-        }
-        menu->printScore(player->getName(), player->getScore());
-        endRound(lid, node->getLeftNode(), menu);
-        endRound(lid, node->getRightNode(), menu);
+        lid->addBack(tile);
+    }
+    menu->printScore(player->getName(), player->getScore());
+
+    if (node->getLeftNode() != nullptr)
+    {
+        endRound(lid, node->getLeftNode(), menu, grayboard);
+    }
+    if (node->getRightNode() != nullptr)
+    {
+        endRound(lid, node->getRightNode(), menu, grayboard);
     }
 }
 
@@ -168,50 +176,40 @@ Player *PlayerTree::searchIndex(PlayerNode *node, int index)
 
 Player *PlayerTree::winningPlayer()
 {
-    return highestBranchScore(root);
+    Player *winningPlayer = nullptr;
+    PlayerNode *winner = highestBranchScore(root);
+    if (winner != nullptr)
+    {
+        winningPlayer = winner->getPlayer();
+    }
+
+    return winningPlayer;
 }
 
-Player *PlayerTree::highestBranchScore(PlayerNode *node)
+PlayerNode *PlayerTree::highestBranchScore(PlayerNode *node)
 {
-    Player *ret = nullptr;
-    int currentScore = node->getPlayer()->getScore(), rightScore = 0, leftScore = 0;
+    PlayerNode *ret = node;
+
     if (node->getRightNode() != nullptr)
     {
-        rightScore = highestBranchScore(node->getRightNode())->getScore();
+        PlayerNode *rightNode = highestBranchScore(node->getRightNode());
+        if (rightNode->getPlayer()->getScore() > node->getPlayer()->getScore())
+        {
+            ret = rightNode;
+        }
+        else if (rightNode->getPlayer()->getScore() == node->getPlayer()->getScore())
+        {
+            ret = nullptr;
+        }
     }
     if (node->getLeftNode() != nullptr)
     {
-        leftScore = highestBranchScore(node->getLeftNode())->getScore();
-    }
-    if (rightScore > leftScore)
-    {
-        if (rightScore > currentScore)
+        PlayerNode *leftNode = highestBranchScore(node->getLeftNode());
+        if (leftNode->getPlayer()->getScore() > node->getPlayer()->getScore())
         {
-            ret = node->getRightNode()->getPlayer();
+            ret = leftNode;
         }
-        else
-        {
-            ret = node->getPlayer();
-        }
-    }
-    else if (leftScore > rightScore)
-    {
-        if (leftScore > currentScore)
-        {
-            ret = node->getLeftNode()->getPlayer();
-        }
-        else
-        {
-            ret = node->getPlayer();
-        }
-    }
-    else if (leftScore == rightScore)
-    {
-        if (currentScore > rightScore)
-        {
-            ret = node->getPlayer();
-        }
-        else
+        else if (leftNode->getPlayer()->getScore() == node->getPlayer()->getScore())
         {
             ret = nullptr;
         }
